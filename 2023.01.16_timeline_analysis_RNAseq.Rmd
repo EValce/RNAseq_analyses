@@ -1,0 +1,285 @@
+---
+title: "RNAseq"
+author: "Elena"
+date: "2023-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "2023-01-16_Timeline_Borja&Jochen_RNAseqdata"
+author: "Elena"
+date: "2023-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Analysis
+
+Analysis of scRNAseq data produced by Jochen and Borja. RNA from Astrocytes, smNPC and DA neurons at 15, 30 and 50 days differentiated with Reinhardt protocol was extracted and sent for sequencing. The RPKM of specific genes were plotted. The heatmap of DA specific genes and neuronal precurson genes was created.
+
+### Load packages
+
+Packages installed: TidyVerse, ggplot2
+
+```{r packages, echo=FALSE, include=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(ggpubr)
+library(DESeq2)
+
+```
+
+```{r import_file_ED_NPC, echo=T, results='hide'}
+
+setwd("Z:/elena.valceschini/Labook/data")
+
+dat_seq_1<- readr::read_rds("fc_hs_q30RNA.rds")
+
+#Column names from the fc file is changed according to the samples
+rawcounts<- dat_seq_1$counts
+colnames(rawcounts) <- c("ASTRO_D65_I","ASTRO_D65_II", "ASTRO_D65_III","Non_mDAN_D15_I","Non_mDAN_D15_II","Non_mDAN_D15_III","mDAN_D15_I", "mDAN_D15_II","mDAN_D15_III", "mDAN_D30_I","mDAN_D30_II","mDAN_D30_III", "Non_mDAN_D50_I", "Non_mDAN_D50_II","Non_mDAN_D50_III","mDAN_D50_I", "mDAN_D50_II","mDAN_D50_III", "smNPC_I", "smNPC_II", "smNPC_III")
+
+
+```
+
+```{r metadata, echo=T, results='hide'}
+
+#Metadata
+
+sample <- c("ASTRO_D65", "ASTRO_D65","ASTRO_D65","Non_mDAN_D15","Non_mDAN_D15","Non_mDAN_D15","mDAN_D15", "mDAN_D15", "mDAN_D15","mDAN_D30","mDAN_D30","mDAN_D30","Non_mDAN_D50","Non_mDAN_D50","Non_mDAN_D50", "mDAN_D50", "mDAN_D50","mDAN_D50","smNPC", "smNPC", "smNPC")
+info.data1 <- data.frame(sample)
+rownames(info.data1) <- c("ASTRO_D65_I","ASTRO_D65_II", "ASTRO_D65_III","Non_mDAN_D15_I","Non_mDAN_D15_II","Non_mDAN_D15_III","mDAN_D15_I", "mDAN_D15_II","mDAN_D15_III", "mDAN_D30_I","mDAN_D30_II","mDAN_D30_III", "Non_mDAN_D50_I", "Non_mDAN_D50_II","Non_mDAN_D50_III","mDAN_D50_I", "mDAN_D50_II","mDAN_D50_III", "smNPC_I", "smNPC_II", "smNPC_III")
+all(rownames(info.data1) == colnames(rawcounts))
+
+```
+
+
+
+
+```{r}
+#Deseq object
+
+dds <- DESeqDataSetFromMatrix(countData = rawcounts,
+                              colData = info.data1,
+                              design = ~ sample)
+
+dds$sample <- factor(dds$sample, levels = c("ASTRO_D65", "Non_mDAN_D15", 'mDAN_D15',"mDAN_D30","Non_mDAN_D50","mDAN_D50","smNPC"))
+
+dds$sample
+
+#filtering low expressed genes
+
+length(dds)
+
+keep <- rowSums(counts(dds)) >= 10
+
+dds<- dds[keep,]
+
+length(dds)
+
+dds$sample<- relevel(dds$sample, ref ='smNPC')
+
+#save rawcounts output
+
+DESeq2::counts(dds) -> tmp
+
+# Run Deseq2
+
+dds <- DESeq(dds)
+
+res<- results(dds)
+
+#Explore results 
+
+summary(res)
+
+# Change p_value to 0.01
+
+res0.01 <- results(dds, alpha = 0.01)
+
+summary(res0.01)
+
+#Contrasts
+
+resultsNames(res)
+
+dds$metaData
+
+#Save normalized_counts
+
+norm_counts = counts(dds, normalized = TRUE)
+norm_counts
+#saveRDS(norm_counts, "norm_counts.rds")
+
+res <- lfcShrink(dds, contrast = "sample_ASTRO_D65_vs_smNPC","sample_Non_mDAN_D15_vs_smNPC","sample_mDAN_D15_vs_smNPC","sample_mDAN_D30_vs_smNPC","sample_Non_mDAN_D50_vs_smNPC","sample_mDAN_D50_vs_smNPC", type = "apeglm")
+sum(res$padj < 0.05, na.rm=TRUE)
+
+resultsNames(dds)
+
+# Extract gene info
+gene_info = dat_seq_1$annotation %>% 
+  as_tibble() %>% 
+  dplyr::select(GeneID) %>% 
+  dplyr::rename(EnsID = GeneID)
+
+
+
+#Annotate the results
+#first convert to data frame 
+as.data.frame(res) -> res_ann
+
+#Add gene info 
+res_ann %>% rownames_to_column(var = 'EnsID') -> res_ann
+inner_join(res_ann, 
+           gene_info,
+           by = 'EnsID') %>%
+           dplyr::select(EnsID, everything())-> res_ann
+
+res_ann
+
+#Annotate results
+
+as.data.frame(res)-> res_DEG
+
+#Filter for padj < 0.05
+res_DEG = res_ann  %>%  filter(padj < 0.05)
+
+res_DEG_FC = res_ann %>%  filter(abs(log2FoldChange) > 1)
+
+res_ann$DEG <- "ns"
+
+res_ann$DEG[res_ann$padj < 0.05] <- "padj sig"
+
+res_ann$DEG[res_DEG$log2FoldChange > 0 & res_DEG$log2FoldChange > 1 & res_DEG$padj < 0.05] <- "Upregulated (sig)"
+
+res_ann$DEG[res_ann$log2FoldChange < 0 & res_DEG$padj < 0.05] <- "Downregulated (sig)"
+
+res_ann$DEG[res_ann$log2FoldChange > 1 & res_DEG$padj < 0.05] <- "Upregulated"
+
+res_ann$DEG[res_ann$log2FoldChange < -1 & res_DEG$padj < 0.05] <- "Downregulated"
+
+sum(res_ann$DEG == "Upregulated")
+sum(res_ann$DEG == "Downregulated")
+sum(res_ann$DEG == "ns")
+sum(res_ann$DEG == "padj sig")
+
+
+res_ann$genelabels <- ""
+res_ann$genelabels <- ifelse(res_ZFHX4_ann$gene_name == "ZFHX4", TRUE, FALSE)
+
+
+```
+
+```{r, fig.height= 10, fig.width=10}
+
+setwd("Z:/elena.valceschini/Labook/data")
+
+Z_score <- readr::read_delim('Z_score.csv')
+
+brks <- seq(-2,2,length.out=100)
+
+myCol <- colorRampPalette(rev(RColorBrewer::brewer.pal(n = 9.95, name = "RdYlBu")))(100)
+
+Z_score_pos<-Z_score[,c(1,5,6,7,8,12,13,14,15,16,17,21,22,23)]
+Z_score_pos %>% filter(gene_name %in% c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3","TH", "KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG")) -> genes3
+
+genes3 %>% filter(gene_name %in% c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3","TH", "KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG")) -> genes3
+
+genes3<- genes3 %>% arrange(factor(gene_name, levels = c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3", "TH","KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG")))
+
+genes3 %>% dplyr::select(2:14) %>% column_to_rownames(var = 'gene_name') -> genes3
+
+pheatmap(genes3, color = myCol, annotation_col = info.data1, show_colnames = TRUE, cluster_cols = FALSE, cluster_rows = FALSE, gaps_row = c(3,9,15,18), breaks = brks)
+
+
+Z_score_neg<-Z_score[,c(1,5,6,7,8,9,10,11,18,19,20)]
+Z_score_neg %>% filter(gene_name %in% c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3", "TH","KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG",'SPI1', 'PTPRC', 'CSF1R', 'CD68', 'P2RY12', 'CCL3','AQP4', 'GFAP', 'SLC1A2', 'ALDH1L1','OLIG1', 'OLIG2', 'MOBP', 'MAG', 'MOG', 'MBP', 'OPLAIN')) -> genes2
+
+genes2 %>% filter(gene_name %in% c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3", "TH","KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG",'SPI1', 'PTPRC', 'CSF1R', 'CD68', 'P2RY12', 'CCL3','AQP4', 'GFAP', 'SLC1A2', 'ALDH1L1','OLIG1', 'OLIG2', 'MOBP', 'MAG', 'MOG', 'MBP', 'OPLAIN')) -> genes2
+
+genes2<- genes2 %>% arrange(factor(gene_name, levels = c("HES1","SOX2", "SOX1","MAP2","NEFL", "SNAP25","NEFM","MAPT", "ENO2", "TMCC3", "TH","KLHL1", "EN1", "GRIA3","DDC","CALB1", "GRP","ADCYAP1", "GRIN2C", "SNCG",'SPI1', 'PTPRC', 'CSF1R', 'CD68', 'P2RY12', 'CCL3','AQP4', 'GFAP', 'SLC1A2', 'ALDH1L1','OLIG1', 'OLIG2', 'MOBP', 'MAG', 'MOG', 'MBP', 'OPLAIN')))
+
+genes2 %>% dplyr::select(2:11) %>% column_to_rownames(var = 'gene_name') -> genes2
+
+pheatmap(genes2,color= myCol, annotation_col = info.data1, show_colnames = TRUE, cluster_cols = FALSE, cluster_rows = FALSE, gaps_row = c(3,9,15,18,20, 26,30), breaks = brks)
+
+
+
+```
+
+
+# Load data
+
+```{r load data}
+
+RNAseq_data<- readr::read_delim('2023-01-2016_RPKM_Borja&Jochen_RNAseqdata.csv')
+
+RNAseq_data<- RNAseq_data[,c(1,2,3,7,8,12,13,14,15,16,17,21,22,23,4,5,6)]
+
+```
+
+
+```{r gene_expression, echo=FALSE,fig.height=4, fig.width=7}
+
+#Metadata
+
+sample <- c("smNPC", "Non_mDAN_D15","mDAN_D15", "mDAN_D30", "Non_mDAN_D50", "mDAN_D50", 'Astrocytes day65')
+
+RNAseq_data_filt.= RNAseq_data %>% 
+  gather(-gene_id:-gene_name, key = "Sample", value = "RPKM") %>% 
+  mutate(Cond = case_when(str_detect(Sample, "smNPC") ~ "smNPC",
+                          str_detect(Sample, "Non_mDAN_D15") ~ "Non mDAN D15",
+                          str_detect(Sample, "mDAN_D15") ~ "mDAN D15",
+                          str_detect(Sample, "mDAN_D30") ~ "mDAN D30",
+                          str_detect(Sample, "Non_mDAN_D50") ~ "Non mDAN D50",
+                          str_detect(Sample, "mDAN_D50") ~ "mDAN D50",
+                          str_detect(Sample, "ASTRO_D65") ~ "Astrocytes day65"),
+         Cond = factor(Cond, levels = c("smNPC", "Non mDAN D15","mDAN D15", "mDAN D30", "Non mDAN D50", "mDAN D50",  'Astrocytes day65')))
+
+# Creating plots
+
+mycomparisons <- rev(list(c("smNPC", "Non_mDAN_D15"),c("smNPC", "mDAN_D15"),c("smNPC", "Non_mDAN_D50")))
+
+ggboxplot(RNAseq_data_filt. %>% 
+            dplyr::filter(gene_name %in% c("TP53")) %>%
+            mutate(gene_name = factor(gene_name, levels = 
+                                        c("TP53"))),
+          x = "Cond", 
+          y = "RPKM", palette = c('#4f4f51','#ed1c23','#ed1c23', '#ed1c23', '#18a79d'), fill = "Cond", facet.by = "gene_name",
+          xlab = "", ylab = "RPKM", add = 'jitter', size=0.1, width =0.8)+
+  theme(panel.border = element_rect(colour = 'grey', linewidth = 0.2),
+        axis.text.y = element_text(face = "bold", size = 15, colour = 'grey'),
+        axis.text.x = element_text(face = "bold", size = 0.1, angle = 90, hjust = 1.0), 
+        axis.title = element_text(face = "bold", size = 0.1),
+        legend.position = "none",
+        strip.text.x = element_blank())-> Exp
+Exp +coord_cartesian(ylim = c(0, 20))-> Exp
+Exp
+
+#setwd("Z:/13- PAPERS/2023_GomezRamos et al/Suppl.Figure.TFs")
+#ggsave(plot = Exp, width = 8, height = 10, dpi = 300, filename = "TCF4.pdf")
+
+
+```
+
+```{r}
+RNAseq_data %>% filter(gene_name %in% c("ALDH1A1", "TH","TUBB3", "SOX6","DCC","DDC", "MAPT", "KLHL1", "PBX1", "NR4A2", "FOXA2", "LMX1A", "SLC6A3", "STMN2", "SOX2","PITX3")) -> genes3
+
+genes3 %>% filter(gene_name %in% c("ALDH1A1", "TH","TUBB3", "SOX6","DCC","DDC", "MAPT", "KLHL1", "PBX1", "NR4A2", "FOXA2", "LMX1A", "SLC6A3", "STMN2", "SOX2","PITX3")) -> genes3
+
+genes3 %>% dplyr::select(2:8) %>% column_to_rownames(var = 'gene_name') -> genes3
+
+pheatmap(genes3, annotation_col = info.data, show_colnames = TRUE, cluster_cols = FALSE)
+
+```
+
+
