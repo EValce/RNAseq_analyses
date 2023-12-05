@@ -16,13 +16,9 @@ date: "2023-01-16"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ### Analysis
 
-Analysis of scRNAseq data produced by Jochen and Borja. RNA from Astrocytes, smNPC and DA neurons at 15, 30 and 50 days differentiated with Reinhardt protocol was extracted and sent for sequencing. The RPKM of specific genes were plotted. The heatmap of DA specific genes and neuronal precurson genes was created.
+Analysis of RNAseq data produced by Jochen and Borja. RNA from Astrocytes, smNPC and DA neurons at 15, 30 and 50 days differentiated with Reinhardt protocol was extracted and sent for sequencing. The RPKM of specific genes were plotted. The heatmap of DA specific genes and neuronal precurson genes was created.
 
 ### Load packages
 
@@ -40,9 +36,11 @@ library(DESeq2)
 
 ```{r import_file_ED_NPC, echo=T, results='hide'}
 
+#set wd
 setwd("Z:/elena.valceschini/Labook/data")
 
-dat_seq_1<- readr::read_rds("fc_hs_q30RNA.rds")
+#import file
+dat_seq_1<- readr::read_rds("file.rds")
 
 #Column names from the fc file is changed according to the samples
 rawcounts<- dat_seq_1$counts
@@ -130,7 +128,6 @@ gene_info = dat_seq_1$annotation %>%
   as_tibble() %>% 
   dplyr::select(GeneID) %>% 
   dplyr::rename(EnsID = GeneID)
-
 
 
 #Annotate the results
@@ -221,8 +218,10 @@ pheatmap(genes2,color= myCol, annotation_col = info.data1, show_colnames = TRUE,
 
 ```{r load data}
 
+#import dataset 
 RNAseq_data<- readr::read_delim('2023-01-2016_RPKM_Borja&Jochen_RNAseqdata.csv')
 
+#select columns
 RNAseq_data<- RNAseq_data[,c(1,2,3,7,8,12,13,14,15,16,17,21,22,23,4,5,6)]
 
 ```
@@ -268,17 +267,6 @@ Exp
 #setwd("Z:/13- PAPERS/2023_GomezRamos et al/Suppl.Figure.TFs")
 #ggsave(plot = Exp, width = 8, height = 10, dpi = 300, filename = "TCF4.pdf")
 
-
-```
-
-```{r}
-RNAseq_data %>% filter(gene_name %in% c("ALDH1A1", "TH","TUBB3", "SOX6","DCC","DDC", "MAPT", "KLHL1", "PBX1", "NR4A2", "FOXA2", "LMX1A", "SLC6A3", "STMN2", "SOX2","PITX3")) -> genes3
-
-genes3 %>% filter(gene_name %in% c("ALDH1A1", "TH","TUBB3", "SOX6","DCC","DDC", "MAPT", "KLHL1", "PBX1", "NR4A2", "FOXA2", "LMX1A", "SLC6A3", "STMN2", "SOX2","PITX3")) -> genes3
-
-genes3 %>% dplyr::select(2:8) %>% column_to_rownames(var = 'gene_name') -> genes3
-
-pheatmap(genes3, annotation_col = info.data, show_colnames = TRUE, cluster_cols = FALSE)
 
 ```
 
