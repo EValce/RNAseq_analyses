@@ -1,0 +1,79 @@
+---
+title: "PPMI_analysis"
+author: "Elena"
+date: "2023-12-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r pressure, echo=FALSE, fig.height= 5, fig.width=5}
+
+#Load the required packages
+
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+library(AnnotationDbi)
+library(EnsDb.Hsapiens.v86)
+
+#import TSV file into data frame
+df <- read_tsv('normalizedCountTable.tsv')
+
+#Create a function that removes the version number from the ENSEMBL id
+remove_number_after_dot <- function(dataframe) {
+  dataframe$Geneid <- gsub("\\.\\d+$", "", dataframe$Geneid)
+  return(dataframe)
+}
+
+# Apply the function to the dataframe
+ENSEMBL <- remove_number_after_dot(df)
+
+columns(EnsDb.Hsapiens.v86)
+list <- select(EnsDb.Hsapiens.v86, keys = ENSEMBL$Geneid, column= c("SEQNAME", 'GENENAME', 'GENEID'), keytype ="GENEID")
+
+names(ENSEMBL)[names(ENSEMBL)== 'Geneid']<- 'GENEID'
+
+#Add the new column to the dataframe
+
+df.2<- merge(ENSEMBL, list, by= "GENEID")
+
+#Create metadata
+
+sample1 <- c("day0", "day25","day65")
+
+#Convert the file in order to have all cell-lines organized by condition(day0, day25, day65)
+
+df.2 = df.2 %>% 
+  gather(-GENEID,-SEQNAME,-GENENAME, key = "sample1", value = "Normalized counts") %>% 
+  mutate(Cond = case_when(str_detect(sample1, "da0") ~ "day0",
+                          str_detect(sample1, "da25") ~ "day25",
+                          str_detect(sample1, "da65") ~ "day65"),
+         Cond = factor(Cond, levels = c("day0","day25","day65")))
+
+#Plot selected genes
+
+ggboxplot(df.2 %>% 
+            dplyr::filter( GENENAME %in% c("AGTR1")) %>%
+            mutate(GENENAME = factor(GENENAME, levels = 
+                                        c(""))),
+          x = "Cond", 
+          y = "Normalized counts", palette = c('#4f4f51','#ed1c23','#18a79d'), fill = "Cond", facet.by = "GENENAME",
+          xlab = "", ylab = "Normalized counts", add = 'jitter', size=0.1, width =0.8)+
+  theme(panel.border = element_rect(colour = 'grey', linewidth = 0.2),
+        axis.text.y = element_text(face = "bold", size = 15, colour = 'black'),
+        axis.text.x = element_text(face = "bold", size = 15, angle = 45, hjust = 1.0), 
+        axis.title = element_text(face = "bold", size = 15),
+        legend.position = "none",
+        strip.text.x = element_text(face = "bold", size = 15))+
+       stat_compare_means(ref.group = "day0", aes(label = ..p.signif..),
+                     method = "t.test", size= 7)-> Exp
+Exp +coord_cartesian(ylim = c(0,22000))-> Exp
+Exp
+
+ggsave(plot = Exp, width = 7, height = 9, dpi = 300, filename = "ZFHX4.pdf")
+
+```
